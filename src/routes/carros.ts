@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma"
 import { Combustiveis } from "../../generated/prisma/enums"
+import { buscarDadosComGemini } from '../../services/iaServices'
 
 import { Router } from 'express'
 import { z } from 'zod'
@@ -24,6 +25,22 @@ router.get("/", async (req, res) => {
     const carros = await prisma.carro.findMany({
       include: {
         marca: true,
+      }
+    })
+    res.status(200).json(carros)
+  } catch (error) {
+    res.status(500).json({ erro: error })
+  }
+})
+
+router.get("/destaques", async (req, res) => {
+  try {
+    const carros = await prisma.carro.findMany({
+      include: {
+        marca: true,
+      },
+      where: {
+        destaque: true
       }
     })
     res.status(200).json(carros)
@@ -66,7 +83,34 @@ router.post("/", async (req, res) => {
         combustivel, marcaId
       }
     })
-    res.status(201).json(carro)
+
+    const marca = await prisma.marca.findUnique({
+      where: { id: Number(marcaId)},
+    })
+
+    let dadosIA = null
+    try {
+      dadosIA = await buscarDadosComGemini(marca?.nome as string, modelo, ano);
+      console.log(dadosIA)
+
+    } catch (erroIA: any) {
+      console.log('Falha ao consultar o Gemini:', erroIA.message);
+    }
+
+    // Atualiza o registro com o retorno da IA (se houver)
+    const carroFinal = dadosIA
+      ? await prisma.carro.update({
+          where: { id: carro.id },
+          data: {
+            pontosFortes: dadosIA.pontosFortes,
+            pontosFracos: dadosIA.pontosFracos,
+            consumoMedioCidade: dadosIA.consumoMedioCidade,
+            consumoMedioEstrada: dadosIA.consumoMedioEstrada,
+          },
+        })
+      : carro;
+
+    res.status(201).json(carroFinal)
   } catch (error) {
     res.status(400).json({ error })
   }
